@@ -1,0 +1,3 @@
+Batch processing for image analysis of single cell analysis of protein localization 
+
+an ImageJ program for batch processing and data collection of images--it does some preprocessing steps such as stacking 3D images, finds and selects the relevant objects, corrects the object's position/rotation, then splits the selection into its respective halves to measure pixel intensity (which corresponds to protein expression levels), and stores the data in a dataframe for quantitative analysis in Python/R. This is useful for biological structures that are symmetrical but may have different levels of protein on each half of the structure. 
