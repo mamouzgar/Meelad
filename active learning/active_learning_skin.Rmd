@@ -1,0 +1,183 @@
+---
+title: "Active Learning - skin dataset trial"
+author: "Meelad + Tyler"
+date: "2/24/2019"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(glmnet)
+library(reshape2)
+library(feather)
+```
+
+```{r results='hide', warning=FALSE, message=FALSE}
+# main <- read_csv("final_data_skin_NP.csv") %>% select(-X1, -image) %>% mutate(label = factor(label))
+main <- read_feather("final_data_skin_NP.feather")
+# data structure: 
+## columns 1 to 1000 = featurized values
+## column 1001 = data label
+
+perf <- main %>% sample_frac(.15)
+main <- main %>% setdiff(perf)
+```
+
+Here are several functions:
+1. create_model_active and create_model_random create ridge regression models with the data, they store the model in a global variable.
+2. generate_preds_active and generate_preds_random make predictions based on their corresponding generated model, they both log the results, and then only the generate_preds_active model calls a function to select the next 100 data points to add to the labeled data.
+3.  store_performance and store_performance_rand_set both log the performance of their respective models in their respective data frames.
+4.  select_data selects the next 100 data points to be labeled based on the "confidence" of the model's prediction of their class.
+
+```{r warning=FALSE, message=FALSE}
+# Items that need to be set up
+perf_active_acc_table <- data.frame(round = NA, acc = NA)
+perf_random_acc_table <- data.frame(round = NA, acc = NA)
+active_accuracy_table <- data.frame(round = NA, acc = NA)
+random_accuracy_table <- data.frame(round = NA, acc = NA)
+confusion_matrices <- vector(mode = "list", length = 1000)
+active_round <- 0
+random_round <- 0
+
+# Function for creating a model with data on active learning set
+create_model_active <- function(df) {
+  df <- df %>% mutate(label = factor(label))
+  alpha <- 0.0
+  lambda <- 0.5
+  x_train <- model.matrix(~ ., select(df, -label))
+  y_train <- df$label
+  active_model <<- glmnet(x_train, y_train, alpha=alpha, 
+                      lambda=lambda, 
+                      family="multinomial")
+}
+
+# Function for creating a model with data on random set
+create_model_random <- function(df) {
+  df <- df %>% mutate(label = factor(label))
+  alpha <- 0.0
+  lambda <- 0.5
+  x_train <- model.matrix(~ ., select(df, -label))
+  y_train <- df$label
+  random_model <<- glmnet(x_train, y_train, alpha=alpha, 
+                      lambda=lambda, 
+                      family="multinomial")
+}
+
+# Function for generating predictions on active learning set
+generate_preds_active <- function(model, df) {
+   x_test <- model.matrix(~ ., select(df, -label))
+   category_prob <- predict(model, newx=x_test, type="response")
+   preds <- predict(model, newx = x_test, type="class")
+   max_probs <- apply(category_prob, 1, FUN = max)
+   df <- cbind(df, max_probs)
+   store_performance(df, preds)
+   df <- df %>% arrange(max_probs)
+   select_data(df)
+}
+
+# Function for generating predictions on random set
+generate_preds_random <- function(model, df) {
+   x_test <- model.matrix(~ ., select(df, -label))
+   category_prob <- predict(model, newx=x_test, type="response")
+   preds <- predict(model, newx = x_test, type="class")
+   max_probs <- apply(category_prob, 1, FUN = max)
+   df <- cbind(df, max_probs)
+   store_performance_rand_set(df, preds)
+   df <- df %>% arrange(max_probs)
+}
+
+# Function for logging accuracy of active learning set
+store_performance <- function(df, preds) {
+   active_round <- active_round + 1
+   conf_mat <- table(df$label, preds)
+   #confusion_matrices[[round]] <- conf_mat
+   acc <- sum(conf_mat[1,1], conf_mat[2,2])/sum(conf_mat)
+   temp <- data.frame(round = active_round, acc = acc)
+   active_accuracy_table <<- rbind(active_accuracy_table, temp)
+}
+
+# Function for logging accuracy of random set
+store_performance_rand_set <- function(df, preds) {
+   random_round <- random_round + 1
+   conf_mat <- table(df$label, preds)
+   #confusion_matrices[[round]] <- conf_mat
+   acc <- sum(conf_mat[1,1], conf_mat[2,2])/sum(conf_mat)
+   temp <- data.frame(round = random_round, acc = acc)
+   random_accuracy_table <<- rbind(random_accuracy_table, temp)
+}
+
+# Function for selecting data and changing datasets
+select_data <- function(df) {
+   df <- df %>% select(-max_probs)
+   dat <<- rbind(dat, df[1:100,])
+   remaining_dat <<- remaining_dat %>% setdiff(dat)
+}
+
+# Function for evaluation on performance set 
+eval_perf <- function(model, df, i) {
+   x_test <- model.matrix(~ ., select(df, -label))
+   category_prob <- predict(model, newx=x_test, type="response")
+   preds <- predict(model, newx = x_test, type="class")
+   max_probs <- apply(category_prob, 1, FUN = max)
+   df <- cbind(df, max_probs)
+   conf_mat <- table(df$label, preds)
+   acc <- sum(conf_mat[1,1], conf_mat[2,2])/sum(conf_mat)
+   temp <- data.frame(round = 1, acc = acc)
+   if (i == 1) {
+     perf_active_acc_table <<- rbind(perf_active_acc_table, temp)
+   } 
+   if (i == 0) {
+     perf_random_acc_table <<- rbind(perf_random_acc_table, temp)
+   }
+}
+```
+
+
+```{r results='hide'}
+# Start off with 100
+dat <- main %>% sample_n(100) # samples 100 from main
+remaining_dat <- main %>% setdiff(dat) # takes the remaining samples left after sample_n
+
+z <- 0
+# And then loop through the rest of the data samples
+for (x in 1:80) {
+  # Active Data 
+  create_model_active(dat)
+  generate_preds_active(active_model, remaining_dat)
+  # Random Data
+  sample_size <- length(dat$X2)
+  random_dat <- main %>% sample_n(sample_size)
+  print(length(random_dat$X2))
+  random_remaining_dat <- main %>% setdiff(random_dat)
+  create_model_random(random_dat)
+  generate_preds_random(random_model, random_remaining_dat)
+  eval_perf(active_model, perf, 1)
+  eval_perf(random_model, perf, 0)
+  print("round complete")
+  z <- z+1
+  print(z)
+}
+```
+
+
+```{r}
+active_accuracy_table <- active_accuracy_table %>% select(-round)
+perf_active_acc_table <- perf_active_acc_table %>% select(-round)
+random_accuracy_table <- random_accuracy_table %>% select(-round)
+perf_random_acc_table <- perf_random_acc_table %>% select(-round)
+
+colnames(active_accuracy_table) <- c("train_active") 
+colnames(random_accuracy_table) <- c("train_rand")
+colnames(perf_active_acc_table) <- c("perf_active")
+colnames(perf_random_acc_table) <- c("perf_rand")
+
+ttl_acc <- cbind(active_accuracy_table, random_accuracy_table, perf_active_acc_table, perf_random_acc_table) %>% na.omit() 
+
+round <- c(1:80)
+ttl_acc <- cbind(round, ttl_acc)
+
+ttl_acc_long <- melt(ttl_acc, id = "round")
+ggplot(data = ttl_acc_long, aes(x=round, y=value, color = variable)) + geom_line()
+```
+
+
