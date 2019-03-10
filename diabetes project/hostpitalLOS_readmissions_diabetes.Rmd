@@ -1,0 +1,615 @@
+---
+title: "hospital readmissions project"
+author: "Meelad"
+date: "02 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "C:/Users/meela/OneDrive/Documents/R/R working directory files/Stats project")
+```
+
+```{r, message=F, warning=F}
+setwd("/Users/meela/OneDrive/Documents/R/R working directory files/Stats project")
+library(stats)
+library(ggplot2)
+library(corrplot)
+library(pwr)
+library(pscl)
+library(car)
+library(rlang)
+library(dplyr)
+library(forcats)
+```
+# Datasets below:
+Original dataset: diabetic
+diab: filtered dataset (untouched)
+diab2: working filtered dataset
+
+
+```{r , echo=FALSE}
+# Read in the dataset
+# data <- read.csv("diabetic_data.csv", header = TRUE, na.strings = "?", stringsAsFactors = TRUE)
+diabetic <- read.csv("diabetic_data.csv", header = TRUE, na.strings = "?", stringsAsFactors = TRUE)
+
+# Filter out the repeated measures (one hospital visit per patient)
+diab <- diabetic %>% group_by(patient_nbr) %>% filter(encounter_id == min(encounter_id)) 
+diab2 <- diab
+summary(diab2)
+```
+
+# Data Cleaning 
+```{r }
+colnames(diab2)
+# remove columns that will be omitted for the purposes of this project
+```
+```{r }
+# remove columns that will be omitted for the purposes of this project
+diab2 <- subset(diab2, select= -c(encounter_id, patient_nbr, weight, payer_code, diabetesMed, diag_1, diag_2, diag_3, max_glu_serum, metformin, repaglinide, nateglinide, chlorpropamide, glimepiride, acetohexamide, glipizide, glyburide, tolbutamide, pioglitazone, rosiglitazone,acarbose, miglitol, troglitazone, tolazamide, examide, citoglipton, glyburide.metformin, glipizide.metformin, glimepiride.pioglitazone, metformin.rosiglitazone, metformin.pioglitazone))
+
+colnames(diab2)
+```
+
+Use of the following medical specialties: 
+Cardiology, Emergency/Trauma, InternalMedicine/GeneralPractice, Surgery, and the rest is Other 
+ 
+```{r , echo=FALSE}
+# Cleaning Medical Specialty
+
+# Create a new column for medical specialty
+# Use function "which": returns the indices at which the logical is TRUE
+diab2$new_med_spec2 <- diab2$medical_specialty
+keep_ind <- which(diab2$medical_specialty=="Emergency/Trauma" | diab2$medical_specialty=="Cardiology" |
+                    diab2$medical_specialty=="InternalMedicine") 
+
+# Modify new column with is.na
+is.na(diab2$new_med_spec2) <- -keep_ind
+
+## Releveling Medical Specialties: Keep Cardiology, Emergency/Trauma, InternalMedicine, Surgery, and the rest is Other
+speclev <- c("Cardiology", "Emergency/Trauma", "InternalMedicine", "Surgery", "Other")
+diab2$new_med_spec2 <- factor(diab2$new_med_spec2, levels = speclev, ordered = F)
+
+# Surgery indices to specialties variable.
+## Orthopedic reconstruction is combined with surgey medical specialty admissions
+keep_surgery <- which(grepl("Surge", diab2$medical_specialty, fixed = FALSE) == TRUE)
+diab2$new_med_spec2[keep_surgery] <- "Surgery"
+
+keep_orthorecon <- which(grepl("Reconstruct", diab2$medical_specialty, fixed = FALSE) == TRUE)
+diab2$new_med_spec2[keep_orthorecon] <- "Surgery"
+
+## Merge general practice and family medicine into internal medicine.
+keep_genpracINTOInternal <- which(grepl("Family", diab2$medical_specialty, fixed = FALSE) == TRUE)
+diab2$new_med_spec2[keep_genpracINTOInternal] <- "InternalMedicine"
+
+## Merge all other medical specialities into Other
+new_med_spec3 <- ifelse(is.na(diab2$new_med_spec2), "Other",diab2$new_med_spec2 )
+new_med_spec3_ind <- which(new_med_spec3 == "Other")
+diab2$new_med_spec2[new_med_spec3_ind] <- "Other"
+summary(diab2$new_med_spec2)
+
+#remove medical specialty from diab2, keeping the cleaned new_med_spec2 as a substitute for medical specialty
+diab2 <- subset(diab2, select= -c(medical_specialty))
+colnames(diab2)
+
+```
+
+Cleaning admission type IDs
+
+Use of the following admission type ids: 
+Emergency, Urgent, Elective   
+These are the most common types. The rest are converted to Other
+```{r , echo=FALSE}
+## Combining admission type ids that are NA
+lev_adm_type <- c("Emergency", "Urgent", "Elective")
+diab2$admission_type_id <- factor(diab$admission_type_id, levels = lev_adm_type, ordered = F)
+
+diab2$admission_type_id <- ifelse(diab$admission_type_id == 1, "Emergency", diab2$admission_type_id)
+diab2$admission_type_id <- ifelse(diab$admission_type_id == 2, "Urgent", diab2$admission_type_id)
+diab2$admission_type_id <- ifelse(diab$admission_type_id == 3, "Elective", diab2$admission_type_id)
+
+diab2$admission_type_id <- factor(diab2$admission_type_id, levels = lev_adm_type, ordered = F)
+
+summary(diab2$admission_type_id)
+
+```
+
+
+
+# Cleaning discharge disposition id
+Group similar disposition ids together:
+Discharged home	1,6, 8
+Outside facility	2,3,4,5,9,10,12, 15,16,17,22-24,27-30
+Expired	11,19,20,21
+Hospice	13,14
+NA	7,9,18,25,26 (includes AMA-against medical advisement-#7, and admitted Inpatient #9 because there were so few)
+
+```{r , echo=FALSE}
+dischargeLev <- c("dch","exp","hspc","dcho")
+diab2$discharge_disposition_id <- factor(diab$discharge_disposition_id, levels = dischargeLev, ordered = F)
+
+# Discharged home (dch)
+diab2$discharge_disposition_id <- ifelse(diab$discharge_disposition_id== 1 | diab$discharge_disposition_id== 6 |
+                                      diab$discharge_disposition_id== 8, "dch", diab2$discharge_disposition_id)
+
+# Expired (exp)
+diab2$discharge_disposition_id <- ifelse(diab$discharge_disposition_id== 11 | diab$discharge_disposition_id== 19 |
+                                           diab$discharge_disposition_id==20| diab$discharge_disposition_id== 21,
+                                         "exp", diab2$discharge_disposition_id)
+
+# Hospice (hspc)
+diab2$discharge_disposition_id <- ifelse(diab$discharge_disposition_id== 13 | diab$discharge_disposition_id==14,
+                                          "hspc", diab2$discharge_disposition_id)
+
+
+# discharged outside facility (dcho)
+diab2$discharge_disposition_id <- ifelse(diab$discharge_disposition_id== 2 | diab$discharge_disposition_id== 3  |
+                                           diab$discharge_disposition_id== 4 | diab$discharge_disposition_id== 5  | 
+                                           diab$discharge_disposition_id== 9 | diab$discharge_disposition_id== 10 | 
+                                           diab$discharge_disposition_id== 12 | diab$discharge_disposition_id== 15 |
+                                           diab$discharge_disposition_id== 16 | diab$discharge_disposition_id== 17 |                                            diab$discharge_disposition_id== 22 |diab$discharge_disposition_id== 23 |
+                                           diab$discharge_disposition_id== 24 | diab$discharge_disposition_id== 27 |
+                                           diab$discharge_disposition_id== 28 | diab$discharge_disposition_id== 29 |
+                                           diab$discharge_disposition_id== 30 ,"dcho",diab2$discharge_disposition_id)
+
+diab2$discharge_disposition_id <- factor(diab2$discharge_disposition_id, levels = dischargeLev, ordered = F)
+summary(diab2$discharge_disposition_id)
+
+```
+# Releveling factor variables that will remain in dataset. 
+
+For this project, all drugs except insulin will be dropped.
+ICD9 codes will be dropped for this project.
+max_glu_serum will be dropped (95% of observations did not measure max glucose serum levels)
+Weight will be dropped (too many missing values)
+
+```{r , echo = FALSE}
+# age brackets
+lev <- c("[0-10)", "[10-20)", "[20-30)", "[30-40)", "[40-50)", "[50-60)", "[60-70)", "[70-80)", "[80-90)", "[90-100)")
+diab2$age <- factor(diab2$age, ordered = T, levels = lev)
+summary(diab2$age)
+
+# Readmission
+ralev <- c("NO", ">30", "<30")
+diab2$readmitted <- factor(diab$readmitted, ordered = F, levels = ralev)
+summary(diab2$readmitted)
+
+
+# A1C levels: measures the glucose (blood sugar) in your blood by assessing the amount of glycated hemoglobin
+a1clev <- c("Norm", ">7", ">8")
+diab2$A1Cresult <- factor(diab$A1Cresult, ordered = F, levels = a1clev)
+keep_a1c <- which(diab2$A1Cresult == "Norm"| diab2$A1Cresult == ">7" | diab2$A1Cresult == ">8")
+is.na(diab2$A1Cresult) <- -keep_a1c
+summary(diab2$A1Cresult)
+
+# Insulin
+insulinlev <- c("Down","Steady","Up")
+diab2$insulin <- factor(diab$insulin, ordered = F, levels = insulinlev)
+na_insulin <- which(diab$insulin == "No")
+is.na(diab2$A1Cresult) <- na_insulin
+summary(diab2$insulin)
+
+# Change in diabetes medication (dosage or name)
+clev <- c("No", "Ch")
+diab2$change <- factor(diab$change, ordered = F, levels = clev)
+summary(diab2$change)
+
+# Whether diabetes medication was prescibed.
+medlev <- c("No", "Yes")
+diab2$diabetesMed <- factor(diab$diabetesMed, ordered = F, levels = medlev)
+summary(diab2$diabetesMed)
+
+# Gender
+diab2$gender <- factor(diab$gender, levels = c("Female", "Male"))
+summary(diab2$gender)
+
+# Create a dichotomous variable for readmission (since we only care for those admitted in <30 days)
+# Combine no readmission and admission in >30 days for logistic regression
+diab2$readmitted_binary <- ifelse(diab2$readmitted== "NO" | diab2$readmitted== ">30",
+                                         "NO", "<30")
+diab2$readmitted_binary <- factor(diab2$readmitted_binary, ordered = F, levels = c("NO", "<30"))
+summary(diab2$readmitted)
+summary(diab2$readmitted_binary)
+```
+```{r }
+# admission source IDs
+hist(diab2$admission_source_id)
+# keep 1,7,17 : Physician referral, emergency room
+diab2$admission_source_id <- ifelse(diab$admission_source_id == 1 |
+                                      diab$admission_source_id == 7, 
+                                    diab2$admission_source_id, NA)
+
+labels_adm_ids = c("physician referral","emergency room")
+diab2$admission_source_id <- factor(diab2$admission_source_id, ordered = FALSE, labels = labels_adm_ids)
+summary(diab2$admission_source_id)
+```
+
+
+```{r , fig.width = 8, fig.asp = 1}
+diabcors <- subset(diab2, select= -c(race, age, admission_type_id, discharge_disposition_id, admission_source_id, readmitted, A1Cresult, insulin, new_med_spec2, diabetesMed))
+
+
+diabcors$gender <- as.numeric(diabcors$gender )
+diabcors$change <- as.numeric(diabcors$change)
+# diabcors$diabetesMed <- as.numeric(diabcors$diabetesMed)
+diabcors$readmitted_binary <- as.numeric(diabcors$readmitted_binary)
+
+cor <- cor(diabcors, method = "spearman", use="pairwise.complete.obs")
+corrplot(cor, method="number")
+
+```
+-Prescriptions of diabetes medications and changes in medication are somewhat correlated, at ~0.50
+-The number of medications prescribed and time in hospital are somewhat correlated, at ~0.46
+Colinearity of independent variables that may be highly correlated could inflate the variance of at least one estimated regression coefficient. In these pairs, it may be advisable to remove one of the two variables that are highly correlated.
+
+# remove colinear variables
+```{r }
+# A1Cresult is removed because it has lots of NA values
+diab2 <- subset(diab2, select = -c(diabetesMed, insulin, A1Cresult))
+```
+
+
+# visualizing the dataset
+# Part 1
+
+```{r , echo=TRUE}
+hist(diab2$time_in_hospital)
+hist(diab2$num_lab_procedures)
+hist(diab2$num_medications)
+hist(diab2$num_procedures)
+hist(diab2$number_diagnoses)
+hist(diab2$number_inpatient)
+
+g <- ggplot(data=diab2)
+
+g + geom_bar(aes(x=diab2$time_in_hospital))
+g + geom_bar( aes(x=diab2$readmitted)) + 
+  xlab("readmission status") + 
+  ggtitle("Readmission status counts") +
+  theme(plot.title = element_text(size = 15, face = "bold"))
+g + geom_bar(aes(x=diab2$readmitted_binary)) + 
+  xlab("readmission status") + 
+  ggtitle("Readmission status counts: combined no readmit and >30 days") +
+  theme(plot.title = element_text(size = 15, face = "bold"))
+
+```
+# visualizing the dataset
+# Part 2
+```{r , echo = TRUE}
+
+g + geom_histogram(aes(x=time_in_hospital, fill=factor(readmitted)),binwidth=1, position = "dodge") +
+  ggtitle("time in hospital separated by readmission")+
+  theme(plot.title = element_text(size = 15))
+g + geom_density(aes(x=time_in_hospital, fill=factor(readmitted)), alpha=.5) +
+  ggtitle("time in hospital separated by readmission")+
+  theme(plot.title = element_text(size = 15))
+g + geom_histogram(aes(x=time_in_hospital, fill=factor(new_med_spec2)),binwidth=1, position = "dodge") +
+  ggtitle("time in hospital separated by medical speciality admission")
+g + geom_density(aes(x=time_in_hospital, fill=factor(new_med_spec2)), alpha = 0.5) +
+  ggtitle("time in hospital separated by medical speciality admission")
+
+g + geom_density(aes(x=num_lab_procedures, fill=factor(admission_type_id)), alpha=.5) +
+  ggtitle("Number of lab procedures across different admission type ids")+
+  theme(plot.title = element_text(size = 15))
+
+# time in hospital vs readmissions
+gReadmit_timeInHosp <- ggplot(data = diab2, aes(x= readmitted, y= time_in_hospital)) +
+  geom_boxplot() +
+  ggtitle("Time in hospital across readmission status") +
+  xlab("readmissions") + ylab("time in hospital")+
+  theme(plot.title = element_text(size = 15))
+gReadmit_timeInHosp
+
+
+# time in hospital vs race
+g + geom_boxplot(aes(x= race, y= time_in_hospital)) +
+  ggtitle("Readmissions based on # of diagnoses") +
+  xlab("race") + ylab("time in hospital")
+
+# time in hospital vs race, separated by gender
+g + geom_boxplot(aes(x= race, y= time_in_hospital, fill=factor(gender))) +
+  ggtitle("time in hospital across genders of different races") +
+  xlab("race") + ylab("time in hospital") +
+  theme(plot.title = element_text(size = 15))
+
+                                                        
+ggplot(data=diab2, aes(race,..count..)) + geom_bar(aes(fill = readmitted), position = "dodge")
+ggplot(data=diab2, aes(race,..count..)) + geom_bar(aes(fill = readmitted_binary), position = "dodge")
+
+ggplot(data=diab2, aes(age,..count..)) + geom_bar(aes(fill = readmitted), position = "dodge")
+ggplot(data=diab2, aes(age,..count..)) + geom_bar(aes(fill = readmitted_binary), position = "dodge")
+
+ggplot(data=diab2, aes(admission_type_id,..count..)) + geom_bar(aes(fill = readmitted), position = "dodge")
+ggplot(data=diab2, aes(admission_type_id,..count..)) + geom_bar(aes(fill = readmitted_binary), position = "dodge")
+
+ggplot(data=diab2, aes(discharge_disposition_id,..count..)) + geom_bar(aes(fill = readmitted), position = "dodge")
+ggplot(data=diab2, aes(discharge_disposition_id,..count..)) + geom_bar(aes(fill = readmitted_binary), position = "dodge")
+
+ggplot(data=diab2, aes(change,..count..)) + geom_bar(aes(fill = readmitted), position = "dodge")
+ggplot(data=diab2, aes(change,..count..)) + geom_bar(aes(fill = readmitted_binary), position = "dodge")
+
+
+ggplot(data=diab2, aes(new_med_spec2,..count..)) + geom_bar(aes(fill = readmitted), position = "dodge")
+ggplot(data=diab2, aes(new_med_spec2,..count..)) + geom_bar(aes(fill = readmitted_binary), position = "dodge")
+
+
+g + geom_density(aes(x=time_in_hospital, fill=factor(number_diagnoses)), alpha=.5) +
+  ggtitle("Time in hospital as related to number of diagnoses")+
+  theme(plot.title = element_text(size = 15))
+
+
+```
+# key notes extracted from visualizations
+Overall, it appears that the number of lab procedures a patient receives can increase depending on their admission type id. Patients in emergency admissions have more lab procedures done than urgent or elective care, indicating more work for the hospital per patient in emergency units.
+
+
+```{r }
+cor(diab2$num_medications, diab2$time_in_hospital)
+cor.test(diab2$num_medications, diab2$time_in_hospital)
+
+wilcox.test(diab2$time_in_hospital[diab2$race[diab2$gender =="Male"] == "Caucasian"],
+            diab2$time_in_hospital[diab2$race[diab2$gender =="Female"] == "Caucasian"])
+# p-value = 0.4818  for male vs female caucasians.                     
+# The median time in hospital for caucasian women appears greater than caucasian men but it is not statistically significant. 
+
+
+
+wilcox.test(diab2$time_in_hospital[diab2$readmitted =="NO"],
+            diab2$time_in_hospital[diab2$readmitted =="<30"])
+wilcox.test(diab2$time_in_hospital[diab2$readmitted =="NO"],
+            diab2$time_in_hospital[diab2$readmitted ==">30"])
+
+
+
+kruskal.test(diab2$race, diab2$time_in_hospital)
+# A race variable is significant
+
+kruskal.test(diab2$gender, diab2$time_in_hospital)
+# Gender is significant
+
+wilcox.test(as.numeric(diab2$age), diab2$time_in_hospital)
+# Age is significant
+
+kruskal.test(diab2$discharge_disposition_id, diab2$time_in_hospital)
+# Discharge dispositon id has a significant variable
+
+lm(diab2$time_in_hospital~diab2$num_lab_procedures)
+summary(lm(diab2$time_in_hospital~diab2$num_lab_procedures))
+#num_lab_procedures is significant
+
+lm(diab2$time_in_hospital~ diab2$num_medications)
+summary(lm(diab2$time_in_hospital~ diab2$num_medications))
+# num_medications is significant
+
+lm(diab2$time_in_hospital ~ diab2$number_outpatient)
+summary(lm(diab2$time_in_hospital ~ diab2$number_outpatient))
+# number_outpatient is significant
+plot(diab2$time_in_hospital,diab2$number_outpatient)
+
+lm(diab2$time_in_hospital ~ diab2$num_medications)
+summary(lm(diab2$time_in_hospital ~ diab2$num_medications))
+#### Tests compared to readmission at all levels
+
+chisq.test(table(diab2$race, diab2$readmitted))
+# Race is significant
+
+chisq.test(table(diab2$gender, diab2$readmitted))
+# Gender is not significant
+
+chisq.test(table(diab2$age, diab2$readmitted))
+kruskal.test(diab2$age, diab2$readmitted)
+# Age is significant
+
+
+num_notreadmitted <-length(diab2$readmitted[diabcors$readmitted==1])
+num_readmitted <- length(diab2$readmitted[diabcors$readmitted==2])
+
+
+pwr.t.test(n=length(diab2$time_in_hospital), d = .1, sig.level = .05 ) # power to detect small effect is 95%, if it exists
+## We have power to detect a small effect in hospital length of stay
+# pwr.t2n.test(n1=num_notreadmitted, n2=num_readmitted, d = .1, sig.level = .05 ) # power to detect small effect is 95%, if it exists
+## We have power to detect a small effect in readmissions.
+
+
+
+```
+
+
+# fit linear model for patient legth of stay in the hospital (time_in_hospital, days)
+```{r}
+# focus on patients binary readmissions as a predictor
+
+diablin <- subset(diab2, select = -c(readmitted))
+diablin <- na.omit(diablin)
+summary(diablin)
+# diablin <- subset(diab2, select= -c(diabetesMed))
+
+
+fit_null <- lm(time_in_hospital ~ 1, data= diablin)
+summary(fit_null)
+
+fit_main <- lm(time_in_hospital ~., data = diablin)
+summary(fit_main)
+
+# interactions
+# fit_full <- lm(time_in_hospital ~ (.)^2, data=diablin)
+# summary(fit_full)
+
+```
+
+
+
+```{r }
+# readmitted_binary will be used as a predictor instead of readmitted
+fit_null <- lm(time_in_hospital ~ 1, data= diablin)
+summary(fit_null)
+
+fit_main <- lm(time_in_hospital ~., data = diablin)
+summary(fit_main)
+
+fit_step <- step(fit_null, scope=list(lower=fit_null, upper=fit_main), direction="both")
+summary(fit_step)
+```
+
+```{r }
+
+# summary(fit_full)
+```
+```{r}
+# step function results with interactions
+fit_temp <- lm(formula = time_in_hospital ~ num_medications + num_lab_procedures +
+    discharge_disposition_id + number_diagnoses + new_med_spec2 +
+    admission_type_id + age + race + num_procedures + number_outpatient +
+    number_inpatient + number_emergency + admission_source_id +
+    readmitted_binary + num_medications:num_lab_procedures +
+    num_medications:new_med_spec2 + num_medications:admission_type_id +
+    number_diagnoses:admission_type_id + num_lab_procedures:new_med_spec2 +
+    admission_type_id:num_procedures + new_med_spec2:num_procedures +
+    discharge_disposition_id:num_procedures + discharge_disposition_id:new_med_spec2 +
+    number_diagnoses:num_procedures + num_medications:num_procedures +
+    num_lab_procedures:admission_type_id + new_med_spec2:admission_type_id +
+    num_lab_procedures:num_procedures + number_diagnoses:new_med_spec2 +
+    num_medications:discharge_disposition_id + num_lab_procedures:discharge_disposition_id +
+    num_medications:age + admission_type_id:number_inpatient +
+    admission_type_id:race + race:num_procedures + num_lab_procedures:number_inpatient +
+    number_diagnoses:number_outpatient + admission_type_id:admission_source_id +
+    num_lab_procedures:admission_source_id + num_medications:admission_source_id +
+    new_med_spec2:admission_source_id + discharge_disposition_id:number_diagnoses +
+    discharge_disposition_id:number_inpatient + new_med_spec2:race +
+    admission_type_id:readmitted_binary + number_inpatient:readmitted_binary +
+    number_outpatient:admission_source_id + num_lab_procedures:number_emergency +
+    number_outpatient:number_inpatient + num_medications:race +
+    num_lab_procedures:race + num_procedures:readmitted_binary +
+    new_med_spec2:number_outpatient + new_med_spec2:number_emergency +
+    num_medications:number_emergency + discharge_disposition_id:age +
+    discharge_disposition_id:admission_type_id + number_inpatient:number_emergency,
+    data = diablin)
+
+summary(fit_temp)
+
+```
+Numeric variable:
+A 1 unit increase in the number of medications prescribed to a
+patient increases the hospital length of stay by 0.136 days,
+assuming all other variables remain constant.
+
+Categorical variable:
+Patients from emergency/trauma medical specialty admissions increases the
+hospital length of stay by ~ 0.804 days relative to cardiology,
+assuming all other variables remain constant.
+
+```{r}
+plot(fit_temp, 1)
+## The residual vs fitted is homoscedastic but not randomly distribution above and below the fitted line.
+plot(fit_temp, 5)
+# However, the residuals vs leverage plot indicates that there are no outliers having undue influence on the fitted line.
+plot(fit_temp)
+```
+
+```{r}
+
+
+fit_temp2 <- lm(formula = time_in_hospital ~. -num_medications -age^4 -age^5 -age^6 -age^7 -age^8 -age^9, 
+    data = diablin)
+summary(fit_temp2)
+plot(fit_temp2)
+```
+
+# Logistic Model #1 (binary readmissions) 
+```{r }
+
+fit_null_glm1 <- glm(readmitted_binary~1, family = binomial(), data = diablin)
+
+fit_main_glm1 <- glm(readmitted_binary~., family = binomial(), data = diablin)
+summary(fit_main_glm1)
+pR2(fit_main_glm1)
+
+
+fit_step_glm1 <- step(fit_null_glm1, scope=list(lower=fit_null_glm1, upper=fit_main_glm1),direction="both")
+summary(fit_step_glm1)
+pR2(fit_step_glm1)
+
+
+fit_temp_glm_1 <- glm(formula = readmitted_binary ~ discharge_disposition_id + 
+    number_inpatient + time_in_hospital + number_diagnoses + number_emergency + change + num_lab_procedures + 
+    admission_source_id, family = binomial(), data = diablin)
+summary(fit_temp_glm_1)
+
+# plot(fit_temp_glm_1)
+```
+
+
+
+The residuals vs fitted plot's structure in the linear model for predicting time in hospital suggests that a Poisson regression might model the data better.
+
+```{r, message=F, warning=F}
+library(ggplot2)
+library(sandwich)
+library(msm)
+library(tidyverse)
+library(caret)
+library(leaps)
+
+# Example code for conditional histogram (other variables should be investigated) 
+with(diablin, tapply(time_in_hospital, readmitted_binary, function(x) {
+  sprintf("M (SD) = %1.2f (%1.2f)", mean(x), sd(x))
+}))
+
+ggplot(diablin, aes(time_in_hospital, fill = readmitted_binary)) +
+  geom_histogram(binwidth=.5, position="dodge")
+
+# Poisson regression with all variables
+poisson_regression <- glm(time_in_hospital ~ ., family="poisson", data=diablin)
+summary(poisson_regression)
+# Deviance in residuals is not normally distributed since the median is not quite zero.
+# The residual deviance is the difference between the deviance of the current model and the maximum deviance of the ideal model where the predicted values are identical to the observed. Therefore, if the residual difference is small enough, the goodness of fit test will not be significant, indicating that the model fits the data.
+
+cov.poisson_regression <- vcovHC(poisson_regression, type="HC0")
+std.err <- sqrt(diag(cov.poisson_regression))
+r.est <- cbind(Estimate= coef(poisson_regression), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(poisson_regression)/std.err), lower.tail=FALSE),
+LL = coef(poisson_regression) - 1.96 * std.err,
+UL = coef(poisson_regression) + 1.96 * std.err)
+
+r.est
+with(poisson_regression, cbind(res.deviance = deviance, df = df.residual,
+  p = pchisq(deviance, df.residual, lower.tail=FALSE)))
+# The test is statistically significant, indicating that the data do not fit the model well. In that situation, we may try to determine if there are omitted predictor variables, if our linearity assumption holds and/or if there is an issue of over-dispersion.
+
+
+fit_null_poisson <- glm(time_in_hospital~1, family = poisson(), data = diablin)
+
+# main variables
+fit_main_poisson <- glm(time_in_hospital~.-age, family = poisson(), data = diablin)
+summary(fit_main_poisson)
+pR2(fit_main_poisson)
+
+# step function
+fit_step_glm1 <- step(fit_null_poisson, scope=list(lower=fit_null_poisson, upper=fit_main_poisson),direction="both")
+summary(fit_step_glm1)
+pR2(fit_step_glm1)
+
+
+with(fit_step_glm1, cbind(res.deviance = deviance, df = df.residual,
+  p = pchisq(deviance, df.residual, lower.tail=FALSE)))
+
+
+
+cov.fit_step_glm1 <- vcovHC(fit_step_glm1, type="HC0")
+std.err <- sqrt(diag(cov.fit_step_glm1))
+r.est <- cbind(Estimate= coef(fit_step_glm1), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(fit_step_glm1)/std.err), lower.tail=FALSE),
+LL = coef(fit_step_glm1) - 1.96 * std.err,
+UL = coef(fit_step_glm1) + 1.96 * std.err)
+r.est
+
+# more investigation is required
+
+# assignment complete
+
+```
+
+
+
