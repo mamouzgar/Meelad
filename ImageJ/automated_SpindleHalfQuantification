@@ -1,4 +1,11 @@
 // Measuring spindle half densities (MTs in GFP[#2] channel)
+/*
+This ImageJ script still requires some fine-tuning but the general code structure is built. 
+It is used for automated quantification of spindles (more specifically, spindle halves) acquired by high-resolution microscopy. 
+Creates a sum-intensity projection of each image in the indirectory, rotates the object (spindle) along the horizontal axis, 
+selects the object and splits the RoI in half to generate a RoI for each spindle half
+then measures the RawIntDen and length of the spindle half for the specified channel. 
+*/
 
 dir = getDirectory("Choose Dir_in Directory ");
 
