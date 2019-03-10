@@ -1,10 +1,15 @@
 // Measuring spindle half densities (MTs in GFP[#2] channel)
 /*
+Use-case: Used to measuring fluorescent intensity for single-cell quantitative analysis of protein levels and structure size.
+This is primarily used for objects that appear symmetrical and may have different localization of proteins on a biological structure.
+
 This ImageJ script still requires some fine-tuning but the general code structure is built. 
 It is used for automated quantification of spindles (more specifically, spindle halves) acquired by high-resolution microscopy. 
-Creates a sum-intensity projection of each image in the indirectory, rotates the object (spindle) along the horizontal axis, 
-selects the object and splits the RoI in half to generate a RoI for each spindle half
-then measures the RawIntDen and length of the spindle half for the specified channel. 
+Creates a sum-intensity projection of each image in the indirectory, rotates the object (spindle) to be positioned along the horizontal axis, 
+selects the object (spindle), and dividies the object's RoI into left and right halves to generate a RoI for each spindle half, 
+and measures the pixel intensity and length of the spindle half for the specified channel. 
+To be added: Take those new half RoIs and measure intensity values in other channels of the same image.
+
 */
 
 dir = getDirectory("Choose Dir_in Directory ");
