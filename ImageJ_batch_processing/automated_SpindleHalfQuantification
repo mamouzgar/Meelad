@@ -1,4 +1,4 @@
-// Measuring spindle half densities (MTs in GFP[#2] channel)
+// Measuring intensity from immunofluorescence experiments using ImageJ (Microtubules in GFP[#2] channel)
 /*
 Use-case: Used to measuring fluorescent intensity for single-cell quantitative analysis of protein levels and structure size.
 This is primarily used for objects that appear symmetrical and may have different localization of proteins on a biological structure.
@@ -9,15 +9,16 @@ Creates a sum-intensity projection of each image in the indirectory, rotates the
 selects the object (spindle), and dividies the object's RoI into left and right halves to generate a RoI for each spindle half, 
 and measures the pixel intensity and length of the spindle half for the specified channel. 
 To be added: Take those new half RoIs and measure intensity values in other channels of the same image.
-
-*/
+// Measuring spindle half densities (MTs in GFP[#2] channel)
 
 dir = getDirectory("Choose Dir_in Directory ");
 
 Get_Out = getDirectory("Choose Get Out Directory ");
 
-
+File.open("C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.txt");
+results_path = "C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.txt";
 /////////////////////////////////////////////////////////////////////////
+
 //Create the list of files in the folder "dir"
 Filelist = getFileList(dir);
 ///////////////////////////////////////////////////////////////////
@@ -55,95 +56,126 @@ for(a=0; a<Filelist.length; a++)
 // Check the following parameters in Set Measurements: AREA and INTEGRATED DENSITY and DISPLAY LABEL and FERET'S DIAMETER
 // 
 
-run 
-
-// rotate image/spindle to horizontal axis 
-macro "Rotate Image" {
-  requires("1.33o");
-  run("Select None");
-  roiManager("Show None");
-  nROIs = roiManager("count");
-  for (row=0; row<nROIs; row++){
-      x1 = getResult("FeretX", row);
-	  y1 = getResult("FeretY", row);
-	  x2 = getResult("X", row);
-	  y2 = getResult("Y", row);
-	  drawLine(x1, y1, x2, y2);
-      if (x1==-1)
-           exit("This macro requires a straight line selection");
-      angle = (180.0/PI)*atan2(y1-y2, x2-x1);
-      run("Arbitrarily...", "angle="+angle+" interpolate");
-}
-
 // setup thresholding 
-macro "identify spindle" {
-	im = getTitle();
-	selectWindow(im);
-	run("Duplicate...", "duplicate channels=2");
-	run("Z Project...", "projection=[Sum Slices]");
-	setAutoThreshold("Default dark no-reset");
-	run("Threshold...");
-	run("Analyze Particles...", "display exclude include add");
-}
-	
-// extract spindle ROIs
-macro "RoI" {
-	nROIs = roiManager("count");
-	for (i=0; i<nROIs; i++){
-		roiManager("Select", i);
-		label = name+i;
-		print(label);
-		roiManager("Rename", label);	
-		saveAs("selection", "C:/Users/meela/Desktop/Batch processing test/Outdirectory/" + label + ".roi");
+
+///////////////////////////////////
+// Identify spindle and RoI
+
+im = getTitle();
+selectWindow(im);
+run("Duplicate...", "duplicate channels=2");
+run("Z Project...", "projection=[Sum Slices]");
+setAutoThreshold("Default dark no-reset");
+run("Threshold...");
+run("Analyze Particles...", "display exclude include add"); 
+
+nROIs = roiManager("count");
+for (row=0; row < nROIs; row++){
+	roiManager("Select", row);
+	area = getResult("Area", row);
+	if (area >40){
+			label = getResultLabel(row);
+			String.copy(label);
+			roiManager("Select", row);
+  			roiManager("Save", "C:/Users/meela/Desktop/Batch processing test/Outdirectory/" + label + ".roi");
+			roiManager("Select", row);
+			roiManager("reset");
+			break;
 		}
-}
-		
+	}
 
-		
+
+Table.deleteRows(0, nROIs);
+roiManager("open", "C:/Users/meela/Desktop/Batch processing test/Outdirectory/" + label + ".roi");
+roiManager("Select", 0);
+roiManager("Rename", label);
+run("Measure");
+
+
+///////////////////////////////////
+// rotate image/spindle to horizontal axis 
+requires("1.33o");
+run("Select None");
+roiManager("Show None");
+x1 = getResult("FeretX", 0);
+y1 = getResult("FeretY", 0);
+x2 = getResult("X", 0);
+y2 = getResult("Y", 0);
+drawLine(x1, y1, x2, y2);
+if (x1==-1)
+   exit("This macro requires a straight line selection");
+angle = (180.0/PI)*atan2(y1-y2, x2-x1);
+run("Arbitrarily...", "angle="+angle+" interpolate");
+
+angle = getResult("FeretAngle", 0);
+angle = toString(angle);
+roiManager("Show None");
+roiManager("Select", 0);
+run("Rotate...", "rotate angle="+angle);
+roiManager("Update");
+Table.deleteRows(0, nROIs);
+roiManager("Select", 0);
+run("Measure");
+label = getResultLabel(0);
+roiManager("Rename", label);	
+saveAs("selection", "C:/Users/meela/Desktop/Batch processing test/Outdirectory/" + label + ".roi");
+
+
+///////////////////////////////////
 //divides current roi into left and right half 
-macro "divide roi [F2]"{ 
-        run("Clear Results"); 
-        roiManager("Reset"); 
-        run("Add to Manager"); 
-        roiManager("Select", 0); 
-        getSelectionBounds(x, y, width, height) 
-        getRawStatistics(totalArea); 
-        minOff = 1e9; 
-        for (w=1; w < width; w++){ 
-                roiManager("Select", 0); 
-                setKeyDown("alt"); 
-                makeRectangle(x, y, w, height); 
-                getRawStatistics(rightArea); 
-                off = abs(2*rightArea - totalArea); 
-                if (off < minOff){ 
-                        minOff = off; 
-                        xHalf = x + w; 
-                        wHalf = w; 
-                        halfArea = rightArea; 
-                } 
-        } 
 
-        //Display result: 
+requires("1.33o");
+roiManager("Select", 0); 
+getSelectionBounds(x, y, width, height);
+getRawStatistics(totalArea); 
+minOff = 1e9; 
+for (w=1; w < width; w++){ 
         roiManager("Select", 0); 
         setKeyDown("alt"); 
-        makeRectangle(x, y, wHalf, height); 
-        run("Copy");//work around 
-        run("Add to Manager"); 
-        run("Measure"); 
-        wait(500); 
-        roiManager("Select", 0); 
-        setKeyDown("alt"); 
-        makeRectangle(x+wHalf, y, width - wHalf, height); 
-        run("Copy");//work around 
-        run("Add to Manager"); 
-        run("Measure"); 
+        makeRectangle(x, y, w, height); 
+        getRawStatistics(rightArea); 
+        off = abs(2*rightArea - totalArea); 
+        if (off < minOff){ 
+                minOff = off; 
+                xHalf = x + w; 
+                wHalf = w; 
+                halfArea = rightArea; 
+        } 
 } 
 
-// delete ROIs	
+///////////////////////////////////
+
+//Display result: 
+roiManager("Select", 0); 
+setKeyDown("alt"); 
+makeRectangle(x, y, wHalf, height); 
+run("Copy");//work around 
+run("Add to Manager"); 
+//run("Measure"); 
+roiManager("Select", 0); 
+setKeyDown("alt"); 
+makeRectangle(x+wHalf, y, width - wHalf, height); 
+run("Copy");//work around 
+run("Add to Manager"); 
+//run("Measure");
+
+roiManager("Select", newArray(0,1,2));
 run("Select All");
-roiManager("Deselect");
-roiManager("Delete");
+roiManager("multi-measure measure_all");
+
+saveAs("results", ".xls");
+
+//data = String.copyResults;
+//print(data); PRINTS ZEROES
+//File.append(data, results_path);
+
+
+// delete ROIs	
+roiManager("reset");
+Table.deleteRows(0, 2);
 run("Close All");	
+
+
 
 
 // code for measuring backgorund: idea --> convert to 8-iit, get background intesntity, then save that for each spindle roi so we can clean later
@@ -173,11 +205,12 @@ b=b+1;
 
 }
 
-// save appended results to a csv file named output.csv 
-selectWindow("Results");
-saveAs("Results", "C:/Users/meela/Desktop/Batch processing test/output.csv");
+// save appended results to a csv file named results.csv 
 
 exit()
+
+
+
 
 
 
