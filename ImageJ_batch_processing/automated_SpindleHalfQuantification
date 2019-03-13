@@ -15,8 +15,7 @@ dir = getDirectory("Choose Dir_in Directory ");
 
 Get_Out = getDirectory("Choose Get Out Directory ");
 
-File.open("C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.txt");
-results_path = "C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.txt";
+results_path = "C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.csv";
 /////////////////////////////////////////////////////////////////////////
 
 //Create the list of files in the folder "dir"
@@ -61,6 +60,7 @@ for(a=0; a<Filelist.length; a++)
 ///////////////////////////////////
 // Identify spindle and RoI
 
+
 im = getTitle();
 selectWindow(im);
 run("Duplicate...", "duplicate channels=2");
@@ -97,17 +97,19 @@ run("Measure");
 requires("1.33o");
 run("Select None");
 roiManager("Show None");
-x1 = getResult("FeretX", 0);
+/* x1 = getResult("FeretX", 0);
 y1 = getResult("FeretY", 0);
 x2 = getResult("X", 0);
 y2 = getResult("Y", 0);
 drawLine(x1, y1, x2, y2);
+
 if (x1==-1)
    exit("This macro requires a straight line selection");
-angle = (180.0/PI)*atan2(y1-y2, x2-x1);
+*/
+angle = getResult("FeretAngle", 0); // (180.0/PI)*atan2(y1-y2, x2-x1);
 run("Arbitrarily...", "angle="+angle+" interpolate");
 
-angle = getResult("FeretAngle", 0);
+angle = abs(getResult("FeretAngle", 0));
 angle = toString(angle);
 roiManager("Show None");
 roiManager("Select", 0);
@@ -159,12 +161,11 @@ run("Copy");//work around
 run("Add to Manager"); 
 //run("Measure");
 
+open(results_path);
 roiManager("Select", newArray(0,1,2));
 run("Select All");
 roiManager("multi-measure measure_all");
-
-saveAs("results", ".xls");
-
+saveAs(results_path);
 //data = String.copyResults;
 //print(data); PRINTS ZEROES
 //File.append(data, results_path);
@@ -174,8 +175,6 @@ saveAs("results", ".xls");
 roiManager("reset");
 Table.deleteRows(0, 2);
 run("Close All");	
-
-
 
 
 // code for measuring backgorund: idea --> convert to 8-iit, get background intesntity, then save that for each spindle roi so we can clean later
@@ -205,9 +204,13 @@ b=b+1;
 
 }
 
-// save appended results to a csv file named results.csv 
+// save appended results to a csv file named output.csv 
 
 exit()
+
+
+
+
 
 
 
