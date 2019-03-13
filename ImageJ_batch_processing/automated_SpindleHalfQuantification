@@ -16,6 +16,19 @@ dir = getDirectory("Choose Dir_in Directory ");
 Get_Out = getDirectory("Choose Get Out Directory ");
 
 results_path = "C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.csv";
+run("Set Measurements...", "area centroid feret's integrated display redirect=None decimal=3");
+
+
+// work-around: create empty excel csv (not txt file, which is defaulted by file.open)
+
+run("Dot Blot (7K)");
+run("Measure");
+Table.deleteRows(0, 0);
+saveAs("results",results_path);
+roiManager("reset");
+Table.deleteRows(0, 2);
+run("Close All");	
+
 /////////////////////////////////////////////////////////////////////////
 
 //Create the list of files in the folder "dir"
@@ -54,6 +67,8 @@ for(a=0; a<Filelist.length; a++)
 // set image scale parameters: scope #2 = 0.0657 um
 // Check the following parameters in Set Measurements: AREA and INTEGRATED DENSITY and DISPLAY LABEL and FERET'S DIAMETER
 // 
+//
+
 
 // setup thresholding 
 
@@ -161,11 +176,12 @@ run("Copy");//work around
 run("Add to Manager"); 
 //run("Measure");
 
-open(results_path);
+results_path = "C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.csv";
+open("C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.csv");
 roiManager("Select", newArray(0,1,2));
 run("Select All");
-roiManager("multi-measure measure_all");
-saveAs(results_path);
+roiManager("multi-measure measure_all append");
+saveAs("Results","C:/Users/meela/Desktop/Batch processing test/Outdirectory/Results.csv");
 //data = String.copyResults;
 //print(data); PRINTS ZEROES
 //File.append(data, results_path);
@@ -177,7 +193,7 @@ Table.deleteRows(0, 2);
 run("Close All");	
 
 
-// code for measuring backgorund: idea --> convert to 8-iit, get background intesntity, then save that for each spindle roi so we can clean later
+// code for measuring backgorund: idea --> convert to 8-bit, get background intesntity, then save that for each spindle roi so we can clean later
 /*
 run("8-bit");
 setAutoThreshold("Default dark no-reset");
@@ -207,6 +223,9 @@ b=b+1;
 // save appended results to a csv file named output.csv 
 
 exit()
+
+
+
 
 
 
