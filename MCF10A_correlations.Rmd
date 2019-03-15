@@ -1,0 +1,138 @@
+---
+title: "polesvscentrioles"
+author: "Meelad Amouzgar"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "C:/Users/meela/Desktop/Backedup files/HMEC and MCF10A Data/MCF10A")
+```
+
+```{r }
+library(ggplot2)
+```
+
+This is a mini-project where I analyze a small subset of biological data that I collected (full dataset is not used to for publication privacy as this data is not published yet)
+```{r }
+df <- read.csv("031519_polesVcentrioles.csv")
+```
+
+
+```{r 'echo = FALSE'}
+library(corrplot)
+cor.test(df$centrioles, df$poles)
+
+# df$supernumerary <- ifelse(df$poles ==2 & df$centrioles == 4, NA, df$centrioles)
+# df$multipolar <- ifelse(df$poles > 2, df$poles,NA)
+
+
+```
+
+Understanding relationships between spindle architecture and chromosome # in cancer at the single cell level. 
+```{r }
+g <- ggplot(data=df)
+g + geom_density(aes(x=centrioles, fill=factor(poles), alpha=.5)) +
+  ggtitle("relationship between # of poles and # of centrioles") +
+  xlab("# of centrioles") +
+  scale_fill_discrete(name="# of\nPoles")
+g + geom_density(aes(x=poles, fill=factor(centrioles), alpha=.5)) +
+  ggtitle("relationship between # of poles and # of centrioles") +
+  xlab("# of poles") +
+  scale_fill_discrete(name="# of\nCentrioles")
+  # theme(plot.title = element_text(size = 15))
+
+
+```
+There appears to be a correlation between # of spindle poles and centrosomes, where an increased # of centrosomes is correlated with spindle multipolarity.
+
+To better focus in on how spindle multipolarity scales with # of centrioles, I will remove bipolar spindles (where # of poles = 2) 
+```{r }
+df2 <- subset(df, select = -c(kinetochores)) # remove kinetochores 
+
+df3 <- df2 # no bipolar spindles
+supernumerary_ind <- which(df3$poles >2)
+is.na(df3$centrioles) <- -supernumerary_ind
+
+g <- ggplot(data=na.omit(subset(df3, select = c(poles, centrioles))))
+g + geom_density(aes(x=poles, fill=factor(centrioles), alpha=.9)) +
+  ggtitle("relationship between # of poles and # of centrioles") +
+  xlab("# of poles") +
+  scale_fill_discrete(name="# of\nCentrioles")+
+  theme(plot.title = element_text(size = 15))
+
+```
+There appears to be a poisson-like distribution, where the median total # of centrioles increases as centrosomes increase and the distribuion gets wider. A larger sample size would highlight this point better.
+
+
+```{r }
+df_kinetochores <- subset(df, select = c(gene,poles,centrioles, kinetochores))
+# df_kinetochores <- na.omit(df_kinetochores)
+
+kinetochores <- ggplot(data=df_kinetochores)
+kinetochores + geom_density(aes(x=kinetochores, fill=factor(gene), alpha=.5)) +
+  ggtitle("relationship between gene and # of chromosomes") +
+  xlab("# of chromosomes") +
+  scale_fill_discrete(name="# of\npoles") 
+
+```
+
+
+Understanding how chromosome # scales with altered mitotic spindle architecture.
+```{r }
+df$ploidy <- ifelse(df$kinetochores > 90 & df$kinetochores < 100, "diploid", NA)
+df$ploidy <- ifelse(df$kinetochores >=  100 & df$kinetochores < 172, "hyperploid", df$ploidy)
+df$ploidy <- ifelse(df$kinetochores >= 172, "tetraploid", df$ploidy)
+
+# diploid <- which(df$kinetochores > 90 & df$kinetochores < 100)
+# hyperploid <- which(df$kinetochores >=  100 & df$kinetochores < 172)
+# tetraploid <- which(df$kinetochores >= 172)
+
+ploidylevels <- c("diploid","hyperploid", "tetraploid")
+df$ploidy <- factor(df$ploidy, labels =ploidylevels)
+
+g <- ggplot(data=na.omit(subset(df, select = c(poles,centrioles, gene, kinetochores, ploidy))))
+g + geom_density(aes(x=poles, fill=factor(ploidy), alpha=.5)) +
+  ggtitle("relationship between ploidy level and # of chromosomes") +
+  xlab("# of poles") +
+  scale_fill_discrete(name="# of\npoles") 
+
+g + geom_density(aes(x=kinetochores, fill=factor(gene), alpha=.5)) +
+  ggtitle("relationship between gene and # of chromosomes") +
+  xlab("# kinetochores") +
+  scale_fill_discrete(name="# of\npoles") 
+# ggplot(df, aes(poles,..count..)) + geom_bar(aes(fill = factor(ploidy)), position = "dodge")
+
+```
+Here we see that diploid cells are always bipolar, hyperploid cells have a mixture of pole phenotypes, and tetraploid cells are almost multipolar (>2 poles). Also, we notice that the MYC oncogene has a range of kinetochore phenotypes that appear hyperploid and another small peak of tetraploid cells. 
+
+```{r }
+df_myc <- df[df$gene=="MYC",]
+df_myc$polephenotype <- ifelse(df_myc$poles ==2, "bipolar", NA)
+df_myc$polephenotype <- ifelse(df_myc$poles >2, "multipolar", df_myc$polephenotype)
+df_myc$polephenotype <- factor(df_myc$polephenotype, labels = c("bipolar","multipolar"))
+
+
+df_myc$centriolephenotype <- ifelse(df_myc$centrioles == 4, "normal centrosomes", NA)
+df_myc$centriolephenotype <- ifelse(df_myc$centrioles > 4, "supernumerary centrosomes", df_myc$centriolephenotype)
+df_myc$centriolephenotype <- factor(df_myc$centriolephenotype, labels = c("normal centrosomes","supernumerary centrosomes"))
+
+df_myc$centriole_pole_phenotype <- ifelse(df_myc$poles ==2 & df_myc$centrioles == 4, "bipolar, 2 centrosomes", NA)
+df_myc$centriole_pole_phenotype <- ifelse(df_myc$poles ==2 & df_myc$centrioles > 4, "bipolar, supernumerary centrosomes", df_myc$centriole_pole_phenotype)
+df_myc$centriole_pole_phenotype <- ifelse(df_myc$poles > 2 & df_myc$centrioles == 4, "multipolar, 2 centrosomes", df_myc$centriole_pole_phenotype)
+df_myc$centriole_pole_phenotype <- ifelse(df_myc$poles > 2 & df_myc$centrioles > 4, "multipolar, supernumerary centrosomes", df_myc$centriole_pole_phenotype)
+df_myc$centriole_pole_phenotype <- factor(df_myc$centriole_pole_phenotype, labels = c("bipolar, 2 centrosomes","bipolar, supernumerary centrosomes", "multipolar, supernumerary centrosomes" ))
+
+q <- ggplot(data=na.omit(subset(df_myc, select = c(kinetochores, centriole_pole_phenotype))))
+q + geom_density(aes(x=kinetochores, fill=factor(centriole_pole_phenotype), alpha=.5)) +
+  ggtitle("relationship between # of chromosomes and spindle architecture in MYC") +
+  xlab("# kinetochores") +
+  scale_fill_discrete(name="phenotype") +
+  theme(plot.title = element_text(size = 15))
+```
+We can conclude that the majority of tetraploid cells (# of kinetochores ~ >184 ) are multipolar with supernumerary centrosomes (blue), suggesting that tetraploid cells might be unable to cluster their multipolar structures into bipolar structures.
+
+```{r }
+
+
+```
