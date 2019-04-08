@@ -1,5 +1,4 @@
 # Meelad
 Meelad's personal respository
 
-A random selection of codes i've written
-
+A random selection of script (some incomplete) i've written.
