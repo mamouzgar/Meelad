@@ -1,0 +1,95 @@
+
+//input="~/Desktop/Data/tif.cropped/";
+
+
+input="/Volumes/New Volume/compress.fix.files.final_multi-channel";
+output="/Users/mamouzgar/Desktop/compressed.crest.files/";
+//
+#@ File (label = "/Volumes/New Volume/compress.fix.files.final_multi-channel", style = "directory") input
+#@ File (label = "/Users/mamouzgar/Desktop/compressed.crest.files/", style = "directory") output
+//
+basefile="/Volumes/New\ Volume/compress.fix.files.final"
+print("restarted script");
+run("ROI Manager...");
+//print(basefile);
+	
+//print(input);
+list = getFileList(input);
+for (i=0; i<list.length; i++) {
+	print(list[i]);
+
+
+	list2 = getFileList(input+"/"+list[i]);
+	for (j=0; j<list2.length; j++) {
+	print(list2[j]);
+	
+//	dirfile=basefile+"/"+list[i];
+//	print(dirfile);
+//	dirfile=File.getName(dirfile);
+//  run("Image Sequence...", "open="+basefile+dirfile+list[i]); 
+	print(input+"/"+list[i]+"/"+list2[j]);
+	open(input+"/"+list[i]+"/"+list2[j]);
+	name=getTitle;
+	selectWindow(name);
+	}
+
+//open("/Volumes/New Volume/compress.fix.files.final/1/MA_CYCD__1_MMStack_Pos0.ome.tif");
+//output="/Users/mamouzgar/Desktop/compressed.crest.files/";
+
+run("Split Channels");
+selectImage(4);
+crest = getTitle();
+selectImage(3);
+im = getTitle(); //tuublin
+selectWindow(im);
+
+
+
+brightestMean=0;
+brightestSlice=1;
+for(j=1; j<nSlices; j++1) {
+	setSlice(j);
+	getStatistics(area, mean, min, max);
+	if(brightestMean<mean) {
+		brightestMean=mean;
+		brightestSlice=j;
+	}
+}
+	
+setSlice(brightestSlice);
+run("Gaussian Blur...", "sigma=10 stack");
+
+run("Threshold...");
+run("Analyze Particles...", "display exclude include add"); 
+
+	if (roiManager("count")>1);{
+        Area=newArray(roiManager("count"));
+        for (i=0; i<roiManager("count");i++){
+                roiManager("select", i);
+                getStatistics(Area[i], mean, min, max, std, histogram);
+        }
+        AreaLarge = 0;
+        for (i=0; i<(roiManager("count"));i++){
+                if (Area[i]>AreaLarge){
+                        AreaLarge=Area[i];
+                        large = i;
+                }
+        }
+}
+roiManager("Select", large);
+rm=roiManager("Select", large);
+  
+
+saveAs("Selection", output+"temp_region.roi");
+roiManager("Deselect");
+roiManager("Delete");
+
+selectWindow(crest);
+crestName=getTitle;
+open(output+"temp_region.roi");
+run("Duplicate...", "duplicate");
+
+saveAs("Tiff", output+crestName);
+run("Close All");
+run("Clear Results");
+}
