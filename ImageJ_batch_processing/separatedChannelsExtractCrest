@@ -1,0 +1,102 @@
+
+//input="~/Desktop/Data/tif.cropped/";
+
+
+input="/Volumes/New Volume/compress.fix.files.final_TIF";
+output="/Users/mamouzgar/Desktop/compressed.crest.files/";
+//
+#@ File (label = "/Volumes/New Volume/compress.fix.files.final_TIF", style = "directory") input
+#@ File (label = "/Users/mamouzgar/Desktop/compressed.crest.files/", style = "directory") output
+//
+basefile="/Volumes/New\ Volume/compress.fix.files.final"
+print("restarted script");
+run("ROI Manager...");
+//print(basefile);
+	
+//print(input);
+list = getFileList(input);
+
+for (i=0; i<list.length; i++) {
+	print(list[i]);
+	
+	if(matches(list[i], ".*488.*")==1){
+        print("open 488");
+       	print(input+"/"+list[i]);
+		open(input+"/"+list[i]);
+		name=getTitle;
+		selectWindow(name);
+		im = getTitle(); //tuublin
+	
+
+//	if(matches(list[i], ".*640.*")==1){
+//        print("open 640");
+//       	print(input+"/"+list[i]);
+//		open(input+"/"+list[i]);
+//		name=getTitle;
+//		selectWindow(name);
+//		crest = getTitle(); //crest
+//	}
+       
+		selectWindow(im);
+		
+		brightestMean=0;
+		brightestSlice=1;
+		for(j=1; j<nSlices; j++1) {
+			setSlice(j);
+			getStatistics(area, mean, min, max);
+			if(brightestMean<mean) {
+				brightestMean=mean;
+				brightestSlice=j;
+			}
+		}
+			
+		setSlice(brightestSlice);
+		run("Gaussian Blur...", "sigma=10 stack");
+		
+		run("Threshold...");
+		run("Analyze Particles...", "display exclude include add"); 
+		
+			if (roiManager("count")>1);{
+		        Area=newArray(roiManager("count"));
+		        for (p=0; p<roiManager("count");p++){
+		                roiManager("select", p);
+		                getStatistics(Area[p], mean, min, max, std, histogram);
+		        }
+		        AreaLarge = 0;
+		        for (p=0; p<(roiManager("count"));p++){
+		                if (Area[p]>AreaLarge){
+		                        AreaLarge=Area[p];
+		                        large = p;
+		                }
+		        }
+		}
+		roiManager("Select", large);
+		rm=roiManager("Select", large);
+		  
+		
+		saveAs("Selection", output+"temp_region.roi");
+		roiManager("Deselect");
+		roiManager("Delete");
+		run("Clear Results");
+		run("Close All");
+
+		crestfile=replace(list[i], "w2L488-EM525-50 55", "w4L640-EM705-72 55");
+		print(crestfile);
+		if (File.exists(input+"/"+crestfile)==1) { 
+		open(input+"/"+crestfile);
+		name=getTitle;
+		selectWindow(name);
+		crest = getTitle(); //crest
+		selectWindow(crest);
+		crestName=getTitle;
+		open(output+"temp_region.roi");
+		run("Duplicate...", "duplicate");
+		
+		saveAs("Tiff", output+i+crestName);
+		}
+	}
+		
+		run("Close All");
+		run("Clear Results");
+		
+}
